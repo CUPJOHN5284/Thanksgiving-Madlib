@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group Mad Libs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+/* Group Mad Libs: one host phone runs the game, everyone else joins with a code.
+   Words are dealt out to players, filled in on their own phones, then the host reveals the story to everyone. */
+:root{--bg:#4a1219;--bg2:#3a0e14;--band:#5c1820;--ink:#fbefe0;--soft:#e9cdb6;--pump:#e8742c;--gold:#f4b63a;--card:#fbefe0;--line:rgba(251,239,224,.18)}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 Nunito,system-ui,sans-serif;min-height:100vh}
+main{max-width:640px;margin:0 auto;padding:clamp(24px,5vw,56px) 16px 48px}
+h1,h2,h3{font-family:"Bagel Fat One",Nunito,sans-serif;font-weight:400;line-height:1.08;margin:0}
+h1{font-size:clamp(40px,9vw,64px);color:var(--gold);text-align:center}
+h2{font-size:clamp(28px,6vw,40px);color:var(--gold);margin-bottom:8px}
+p{margin:0 0 12px}
+.sub{text-align:center;color:var(--soft);margin:10px 0 28px}
+.panel{background:var(--band);border-radius:22px;padding:clamp(18px,4vw,28px);margin-bottom:16px}
+.card{background:var(--card);color:#2a0a0d;border-radius:24px;padding:clamp(20px,5vw,36px);box-shadow:0 14px 30px rgba(0,0,0,.35)}
+.card h2,.card h3{color:#4a1219}
+label{display:block;font-weight:800;margin:10px 0 6px}
+input{width:100%;font:inherit;font-size:18px;padding:12px 16px;border-radius:14px;border:2px solid var(--line);background:var(--bg2);color:var(--ink);min-height:50px}
+.card input{background:#fff;color:#2a0a0d;border-color:#e2c3a3}
+input:focus-visible,button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+button{font:inherit;font-weight:800;min-height:50px;padding:10px 20px;border-radius:14px;border:0;background:var(--pump);color:#2a0a0d;cursor:pointer}
+button:hover{background:var(--gold)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.ghost{background:transparent;color:inherit;border:2px solid var(--line)}
+.card button.ghost{border-color:#e2c3a3}
+.row{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.row button{flex:1 1 160px}
+.code{font-family:"Bagel Fat One",sans-serif;font-size:clamp(56px,16vw,96px);letter-spacing:.08em;color:var(--gold);text-align:center;line-height:1}
+.link{word-break:break-all;text-align:center;color:var(--soft);font-size:15px;margin-top:8px}
+#qr{display:flex;justify-content:center;margin:16px auto 0;background:#fff;padding:12px;border-radius:14px;width:max-content}
+.players{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.pl{background:var(--bg2);border-radius:999px;padding:6px 14px;font-weight:700}
+.pl.ok{background:var(--gold);color:#2a0a0d}
+.pl.gone{opacity:.45;text-decoration:line-through}
+.stories{display:grid;gap:8px;margin-top:8px}
+.stories button{background:var(--bg2);color:var(--ink);border:2px solid var(--line);text-align:left}
+.stories button.on{background:var(--gold);color:#2a0a0d;border-color:var(--gold)}
+.prog{display:flex;align-items:center;gap:12px;font-weight:800;font-size:15px;color:#7a3a1c}
+.bar{flex:1;height:8px;border-radius:9px;background:#ead2b8;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--pump);transition:width .3s}
+.ask{display:block;font-family:"Bagel Fat One",sans-serif;font-size:clamp(30px,8vw,46px);line-height:1.1;margin:18px 0 4px;color:#2a0a0d}
+.hint{min-height:1.4em;color:#7a3a1c;font-size:15px;margin-bottom:12px}
+.story{font-size:clamp(18px,4.4vw,21px);line-height:1.75}
+.story mark{background:var(--gold);color:#2a0a0d;font-weight:800;padding:1px 6px;border-radius:6px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.story mark small{font-weight:600;font-size:.7em;opacity:.75;margin-left:3px}
+.msg{text-align:center;font-weight:700;color:var(--gold);min-height:1.5em;margin-top:10px}
+.center{text-align:center}
+.spin{width:44px;height:44px;margin:18px auto;border-radius:50%;border:5px solid var(--line);border-top-color:var(--gold);animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(1turn)}}
+[hidden]{display:none!important}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Group Mad Libs</h1>
+  <p class="sub">Everyone fills in words on their own phone. Nobody sees the story until the big reveal.</p>
+
+  <!-- Home -->
+  <section id="home">
+    <div class="panel">
+      <label for="myName">Your name</label>
+      <input id="myName" maxlength="24" placeholder="Your first name" autocomplete="given-name">
+    </div>
+    <div class="panel">
+      <h2>Join a game</h2>
+      <label for="joinCode">Game code</label>
+      <input id="joinCode" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;letter-spacing:.2em;font-weight:800">
+      <div class="row"><button type="button" id="joinBtn">Join game</button></div>
+    </div>
+    <div class="panel">
+      <h2>Host a game</h2>
+      <p>Your phone runs the game and shows the story at the end. Keep this page open while you play.</p>
+      <div class="row"><button type="button" class="ghost" id="hostBtn">Host a new game</button></div>
+    </div>
+    <div class="msg" id="homeMsg" aria-live="polite"></div>
+  </section>
+
+  <!-- Host lobby -->
+  <section id="lobby" hidden>
+    <div class="panel center">
+      <p>Have everyone go to this page and type the code:</p>
+      <div class="code" id="codeOut">····</div>
+      <div class="link" id="linkOut"></div>
+      <div id="qr" aria-label="QR code to join"></div>
+    </div>
+    <div class="panel">
+      <h2>Players</h2>
+      <div class="players" id="lobbyPlayers"></div>
+    </div>
+    <div class="panel">
+      <h2>Pick a story</h2>
+      <div class="stories" id="storyPick"></div>
+      <div class="row"><button type="button" id="startBtn" disabled>Deal the words</button></div>
+      <p class="msg" id="lobbyMsg"></p>
+    </div>
+  </section>
+
+  <!-- Player waiting room -->
+  <section id="waitRoom" hidden>
+    <div class="panel center">
+      <h2 id="waitTitle">You're in!</h2>
+      <p id="waitText">Waiting for the host to start…</p>
+      <div class="spin" aria-hidden="true"></div>
+      <div class="players" id="waitPlayers" style="justify-content:center"></div>
+    </div>
+  </section>
+
+  <!-- Fill in words -->
+  <section id="fill" hidden>
+    <form class="card" id="fillForm">
+      <div class="prog"><span id="fillStep"></span><span class="bar"><i id="fillBar"></i></span></div>
+      <label class="ask" for="fillIn" id="fillAsk"></label>
+      <div class="hint" id="fillHint"></div>
+      <input id="fillIn" maxlength="40" autocomplete="off" placeholder="Type a word…">
+      <div class="row">
+        <button type="submit" id="fillNext">Next</button>
+        <button type="button" class="ghost" id="fillBack">Back</button>
+      </div>
+    </form>
+  </section>
+
+  <!-- Host progress -->
+  <section id="hostWait" hidden>
+    <div class="panel">
+      <h2>Waiting on words</h2>
+      <p>Players turn gold when they're done.</p>
+      <div class="players" id="progPlayers"></div>
+      <div class="row">
+        <button type="button" id="revealBtn" disabled>Reveal the story</button>
+        <button type="button" class="ghost" id="takeBtn">Fill in missing words myself</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Story -->
+  <section id="storyView" hidden>
+    <div class="card">
+      <h3 id="storyTitle" style="font-size:clamp(28px,7vw,40px);margin-bottom:14px"></h3>
+      <p class="story" id="storyText"></p>
+    </div>
+    <div class="row" id="hostAgain" hidden>
+      <button type="button" id="againBtn">Play another round</button>
+    </div>
+    <p class="msg" id="storyMsg"></p>
+  </section>
+</main>
+
+<script>
+{
+  const PREFIX = 'upjohn-madlib-v1-';
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const clean = s => String(s || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const screens = ['home', 'lobby', 'waitRoom', 'fill', 'hostWait', 'storyView'];
+  const show = id => { screens.forEach(s => $(s).hidden = s !== id); scrollTo(0, 0); };
+
+  const stories = [
+    { title: 'The Great Turkey Incident',
+      ask: [['A friend’s name',''],['Adjective','soggy, brilliant'],['A time of day','4:30 a.m., bedtime'],['Plural noun','socks, crayons'],['A food',''],['Something smelly',''],['Verb ending in -ing','yodeling'],['A number',''],['An animal',''],['An exclamation','Yikes! Holy guacamole!'],['Adjective',''],['A takeout food',''],['A body part',''],['Adjective','']],
+      text: 'This year, {0} insisted on cooking the turkey, which everyone agreed was a {1} idea. They woke up at {2}, stuffed the bird with {3} and a whole bowl of {4}, and shoved it in the oven. By noon the whole house smelled like {5}. Two hours later the smoke alarm started {6}, and {7} guests ran out onto the lawn. When the oven door finally opened, the turkey looked more like a {8} than a bird. “{9}!” yelled Grandma. In the end we ate {10} {11} on the porch, and our chef pulled a {12} carrying the leftovers to the car. Honestly? Best Thanksgiving ever. Very {13}.' },
+    { title: 'Black Friday Battle Plan',
+      ask: [['A store',''],['A number',''],['Adjective',''],['A noun','The thing everyone wants'],['A friend’s name',''],['A verb','juggle, moonwalk'],['Plural noun',''],['A snack',''],['Adverb','sneakily'],['A sound','Boing! Kaboom!'],['An amount of money',''],['A noun',''],['An emotion','']],
+      text: 'At {1} a.m. we lined up outside {0}, wearing our most {2} pajamas. Our mission: grab the last {3} on sale. {4} was in charge of distracting the crowd, so they started to {5} in the parking lot while handing out free {6}. I fueled up on a cold {7} and ran {8} toward the doors. Then I heard it: a loud “{9}!” Someone snatched the prize right out of my hands. I spent {10} on a {11} I didn’t even want and drove home feeling {12}. Same time next year.' },
+    { title: 'The Toast Nobody Asked For',
+      ask: [['Adjective',''],['A friend’s name',''],['Plural noun','Things you could hold up'],['Verb, past tense','skipped, crawled'],['Plural noun',''],['A celebrity',''],['Adjective',''],['A food',''],['A number',''],['A verb',''],['A silly word','Gobbledygook'],['An emotion','']],
+      text: 'Everyone, raise your {2}! I’d like to make a {0} toast. First, thank you to {1}, who {3} all the way here carrying nothing but a bag of {4}. You’re basically {5}, but way more {6}. This year I’m thankful for {7}, for {8} rounds of cards I definitely did not cheat at, and for friends who will {9} with me no matter what. So let’s all say it together: “{10}!” I’m feeling very {11} right now. Somebody pass the pie.' },
+    { title: 'Friendsgiving Group Chat',
+      ask: [['A friend’s name',''],['A food',''],['Adjective',''],['A number',''],['Plural noun',''],['A friend’s name',''],['A verb',''],['An emoji, described','crying-laughing face'],['A place',''],['Adjective',''],['A board game','']],
+      text: '{0}: “Okay, who’s bringing the {1}?” Nobody answered for {3} hours. Then someone sent a {2} photo of {4} with no explanation. {5} replied, “I can {6}, but that’s it,” followed by a single {7}. We finally agreed to meet at {8}. The food was {9}, the stuffing was store-bought, and the night ended with a screaming match over {10}. Already planning next year.' }
+  ];
+
+  /* ---------- shared: fill-in flow and story ---------- */
+  let fillPrompts = [], fillIdx = 0, fillWords = {}, fillDone = null;
+  const startFill = (prompts, onDone) => {
+    fillPrompts = prompts; fillIdx = 0; fillWords = {}; fillDone = onDone;
+    if (!prompts.length) { onDone({}); return; }
+    show('fill'); drawFill(); setTimeout(() => $('fillIn').focus(), 60);
+  };
+  const drawFill = () => {
+    const p = fillPrompts[fillIdx];
+    $('fillStep').textContent = `Word ${fillIdx + 1} of ${fillPrompts.length}`;
+    $('fillBar').style.width = (fillIdx / fillPrompts.length * 100) + '%';
+    $('fillAsk').textContent = p.label;
+    $('fillHint').textContent = p.hint || '';
+    $('fillIn').value = fillWords[p.i] || '';
+    $('fillBack').disabled = fillIdx === 0;
+    $('fillNext').textContent = fillIdx === fillPrompts.length - 1 ? 'Send my words' : 'Next';
+  };
+  $('fillForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const v = clean($('fillIn').value); if (!v) { $('fillIn').focus(); return; }
+    fillWords[fillPrompts[fillIdx].i] = v;
+    if (fillIdx < fillPrompts.length - 1) { fillIdx++; drawFill(); $('fillIn').focus(); }
+    else fillDone(fillWords);
+  });
+  $('fillBack').addEventListener('click', () => {
+    if (fillIdx === 0) return;
+    const v = clean($('fillIn').value); if (v) fillWords[fillPrompts[fillIdx].i] = v;
+    fillIdx--; drawFill();
+  });
+  const showStory = s => {
+    $('storyTitle').textContent = s.title;
+    $('storyText').innerHTML = esc(s.text).replace(/\{(\d+)\}/g, (_, k) => {
+      const w = s.words[+k] || { w: '???', by: '' };
+      return `<mark>${esc(w.w)}${w.by ? `<small>(${esc(w.by)})</small>` : ''}</mark>`;
+    });
+    show('storyView');
+  };
+
+  /* ---------- home ---------- */
+  try { $('myName').value = localStorage.getItem('gml-name') || ''; } catch (e) {}
+  const q = new URLSearchParams(location.search).get('room');
+  if (q) $('joinCode').value = q.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4);
+  const myName = () => {
+    const n = clean($('myName').value).slice(0, 24);
+    if (!n) { $('homeMsg').textContent = 'Type your name first.'; $('myName').focus(); return null; }
+    try { localStorage.setItem('gml-name', n); } catch (e) {}
+    return n;
+  };
+  if (typeof Peer === 'undefined') $('homeMsg').textContent = 'Couldn’t load the game connection. Check your internet and refresh.';
+
+  /* ---------- HOST ---------- */
+  const H = { peer: null, code: '', name: '', players: [], story: 0, assign: {}, answers: {}, phase: 'lobby' };
+  // players: {id, name, conn|null (host), done, gone}
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const newCode = () => Array.from({ length: 4 }, () => letters[Math.floor(Math.random() * letters.length)]).join('');
+  const send = (p, msg) => { if (p.conn && p.conn.open) try { p.conn.send(msg); } catch (e) {} };
+  const live = () => H.players.filter(p => !p.gone);
+  const lobbyMsg = () => ({ t: 'lobby', players: live().map(p => p.name) });
+  const broadcast = msg => H.players.forEach(p => send(p, msg));
+  const chip = (p, cls) => `<span class="pl ${cls || ''}">${esc(p.name)}${p.id === 'host' ? ' (host)' : ''}</span>`;
+  const drawLobby = () => {
+    $('lobbyPlayers').innerHTML = live().map(p => chip(p)).join('');
+    $('startBtn').disabled = live().length < 2;
+    $('lobbyMsg').textContent = live().length < 2 ? 'Waiting for at least one more player…' : '';
+    $('storyPick').innerHTML = stories.map((s, i) => `<button type="button" data-s="${i}" class="${i === H.story ? 'on' : ''}" aria-pressed="${i === H.story}">${esc(s.title)} · ${s.ask.length} words</button>`).join('');
+  };
+  const drawProgress = () => {
+    $('progPlayers').innerHTML = H.players.filter(p => H.assign[p.id] && H.assign[p.id].length)
+      .map(p => chip(p, p.gone && !p.done ? 'gone' : p.done ? 'ok' : '')).join('');
+    const missing = stories[H.story].ask.some((_, i) => !H.answers[i]);
+    $('revealBtn').disabled = missing;
+    $('takeBtn').hidden = !missing;
+  };
+  const hostStart = name => {
+    H.name = name; H.code = newCode();
+    $('homeMsg').textContent = 'Starting a game…';
+    H.peer = new Peer(PREFIX + H.code);
+    H.peer.on('open', () => {
+      H.players = [{ id: 'host', name, conn: null, done: false, gone: false }];
+      $('codeOut').textContent = H.code;
+      const url = location.origin + location.pathname + '?room=' + H.code;
+      $('linkOut').textContent = url;
+      $('qr').innerHTML = '';
+      try { new QRCode($('qr'), { text: url, width: 170, height: 170 }); } catch (e) { $('qr').hidden = true; }
+      drawLobby(); show('lobby');
+    });
+    H.peer.on('error', err => {
+      if (err.type === 'unavailable-id') { H.peer.destroy(); hostStart(name); return; }
+      if (err.type === 'peer-unavailable') return;
+      $('homeMsg').textContent = 'Connection problem: ' + err.type + '. Try refreshing.';
+      $('lobbyMsg').textContent = 'Connection problem: ' + err.type + '.';
+    });
+    H.peer.on('connection', conn => {
+      conn.on('data', d => hostMsg(conn, d));
+      conn.on('close', () => {
+        const p = H.players.find(x => x.conn === conn); if (!p) return;
+        if (H.phase === 'lobby') H.players = H.players.filter(x => x !== p); else p.gone = true;
+        broadcast(lobbyMsg()); drawLobby(); drawProgress();
+      });
+    });
+  };
+  const hostMsg = (conn, d) => {
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'join') {
+      let name = clean(d.name).slice(0, 24) || 'Player';
+      const taken = n => H.players.some(p => !p.gone && p.name.toLowerCase() === n.toLowerCase());
+      let base = name, k = 2; while (taken(name)) name = `${base} ${k++}`;
+      const p = { id: conn.peer, name, conn, done: false, gone: false };
+      H.players.push(p);
+      send(p, { t: 'hello', name, phase: H.phase });
+      broadcast(lobbyMsg()); drawLobby();
+      if (H.phase === 'reveal' && H.last) send(p, H.last);
+    }
+    if (d.t === 'answers' && H.phase === 'play') {
+      const p = H.players.find(x => x.conn === conn); if (!p) return;
+      const mine = H.assign[p.id] || [];
+      for (const i of mine) { const v = clean(d.words && d.words[i]); if (v) H.answers[i] = { w: v, by: p.name }; }
+      p.done = mine.every(i => H.answers[i]);
+      drawProgress();
+    }
+  };
+  const deal = () => {
+    const st = stories[H.story];
+    H.phase = 'play'; H.answers = {}; H.assign = {};
+    const ps = shuffle(live().slice());
+    ps.forEach(p => { p.done = false; H.assign[p.id] = []; });
+    shuffle(st.ask.map((_, i) => i)).forEach((i, k) => H.assign[ps[k % ps.length].id].push(i));
+    const promptsFor = ids => ids.sort((a, b) => a - b).map(i => ({ i, label: st.ask[i][0], hint: st.ask[i][1] }));
+    H.players.forEach(p => { if (p.conn) send(p, { t: p.gone ? 'noop' : 'assign', prompts: promptsFor(H.assign[p.id] || []) }); });
+    startFill(promptsFor(H.assign.host || []), hostAnswered);
+  };
+  const hostAnswered = words => {
+    const me = H.players[0];
+    for (const [i, v] of Object.entries(words)) H.answers[i] = { w: v, by: H.name };
+    me.done = true; drawProgress(); show('hostWait');
+  };
+  $('storyPick').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { H.story = +b.dataset.s; drawLobby(); } });
+  $('startBtn').addEventListener('click', deal);
+  $('takeBtn').addEventListener('click', () => {
+    const st = stories[H.story];
+    const missing = st.ask.map((_, i) => i).filter(i => !H.answers[i]);
+    startFill(missing.map(i => ({ i, label: st.ask[i][0], hint: st.ask[i][1] })), hostAnswered);
+  });
+  $('revealBtn').addEventListener('click', () => {
+    const st = stories[H.story];
+    H.phase = 'reveal';
+    H.last = { t: 'story', title: st.title, text: st.text, words: st.ask.map((_, i) => H.answers[i]) };
+    broadcast(H.last); showStory(H.last); $('hostAgain').hidden = false;
+    $('storyMsg').textContent = 'Everyone’s phone is showing the story now.';
+  });
+  $('againBtn').addEventListener('click', () => {
+    H.phase = 'lobby'; H.players = H.players.filter(p => !p.gone);
+    H.story = (H.story + 1) % stories.length;
+    broadcast({ t: 'round' }); broadcast(lobbyMsg()); drawLobby(); show('lobby'); $('storyMsg').textContent = '';
+  });
+  $('hostBtn').addEventListener('click', () => { const n = myName(); if (n && typeof Peer !== 'undefined') hostStart(n); });
+
+  /* ---------- PLAYER ---------- */
+  let P = null;
+  const joinGame = (code, name) => {
+    $('homeMsg').textContent = 'Connecting…';
+    const peer = new Peer();
+    let opened = false;
+    const fail = m => { if (!opened) { $('homeMsg').textContent = m; try { peer.destroy(); } catch (e) {} } };
+    const timer = setTimeout(() => fail('Couldn’t reach that game. Check the code and make sure the host still has the page open.'), 12000);
+    peer.on('error', err => { clearTimeout(timer); fail(err.type === 'peer-unavailable' ? `No game found with code ${code}.` : 'Connection problem: ' + err.type + '.'); });
+    peer.on('open', () => {
+      const conn = peer.connect(PREFIX + code, { reliable: true });
+      P = { peer, conn, name };
+      conn.on('open', () => { opened = true; clearTimeout(timer); conn.send({ t: 'join', name }); });
+      conn.on('data', playerMsg);
+      conn.on('close', () => { $('waitTitle').textContent = 'Game ended'; $('waitText').textContent = 'The host closed the game. Ask for a new code to play again.'; show('waitRoom'); });
+    });
+  };
+  const playerMsg = d => {
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'hello') {
+      P.name = d.name;
+      $('waitTitle').textContent = `You're in, ${d.name}!`;
+      $('waitText').textContent = d.phase === 'lobby' ? 'Waiting for the host to start…' : 'A round is already going. You’ll get words next round.';
+      show('waitRoom');
+    }
+    if (d.t === 'lobby') $('waitPlayers').innerHTML = (d.players || []).map(n => `<span class="pl">${esc(n)}</span>`).join('');
+    if (d.t === 'round') { $('waitTitle').textContent = 'Next round!'; $('waitText').textContent = 'Waiting for the host to deal the words…'; show('waitRoom'); }
+    if (d.t === 'assign') {
+      const prompts = (d.prompts || []).map(p => ({ i: +p.i, label: clean(p.label), hint: clean(p.hint) }));
+      startFill(prompts, words => {
+        try { P.conn.send({ t: 'answers', words }); } catch (e) {}
+        $('waitTitle').textContent = 'Words sent!'; $('waitText').textContent = 'Waiting for everyone else to finish…'; show('waitRoom');
+      });
+    }
+    if (d.t === 'story') {
+      showStory({ title: clean(d.title), text: String(d.text || ''), words: (d.words || []).map(w => w ? { w: clean(w.w), by: clean(w.by) } : null) });
+      $('hostAgain').hidden = true; $('storyMsg').textContent = 'Stick around. The host can start another round.';
+    }
+  };
+  $('joinBtn').addEventListener('click', () => {
+    const n = myName(); if (!n) return;
+    const code = $('joinCode').value.toUpperCase().replace(/[^A-Z]/g, '');
+    if (code.length !== 4) { $('homeMsg').textContent = 'Game codes are 4 letters.'; $('joinCode').focus(); return; }
+    if (typeof Peer === 'undefined') return;
+    joinGame(code, n);
+  });
+  $('joinCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); });
+}
+</script>
+</body>
+</html>
